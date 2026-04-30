@@ -1,0 +1,103 @@
+import type { User, Application, Connection, ConnectionType } from '../types';
+
+const BASE = '/v1';
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    ...options,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg = body?.error?.message || body?.detail?.error?.message || `HTTP ${res.status}`;
+    throw new ApiError(msg, res.status);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+// Users
+export const usersApi = {
+  create: (email: string, name: string) =>
+    request<User>('/users', {
+      method: 'POST',
+      body: JSON.stringify({ email, name }),
+    }),
+
+  lookupByEmail: (email: string) =>
+    request<User>(`/users/lookup?email=${encodeURIComponent(email)}`),
+
+  get: (userId: string) => request<User>(`/users/${userId}`),
+
+  update: (userId: string, name: string) =>
+    request<User>(`/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+};
+
+// Applications
+export const applicationsApi = {
+  create: (userId: string, name: string, policies?: object, controls?: object) =>
+    request<Application & { api_key: string }>(`/users/${userId}/applications`, {
+      method: 'POST',
+      body: JSON.stringify({ name, ...(policies && { policies }), ...(controls && { controls }) }),
+    }),
+
+  list: (userId: string) =>
+    request<{ data: Application[] }>(`/users/${userId}/applications`),
+
+  get: (appId: string) => request<Application>(`/applications/${appId}`),
+
+  update: (appId: string, updates: { name?: string; status?: string; policies?: object; controls?: object }) =>
+    request<Application>(`/applications/${appId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    }),
+
+  delete: (appId: string) =>
+    request<void>(`/applications/${appId}`, { method: 'DELETE' }),
+
+  rotateKey: (appId: string) =>
+    request<{ api_key: string }>(`/applications/${appId}/rotate-key`, {
+      method: 'POST',
+    }),
+};
+
+// Intents
+export const intentsApi = {
+  list: (appId: string, limit = 100) =>
+    request<{ data: any[] }>(`/applications/${appId}/intents?limit=${limit}`),
+};
+
+// Connections
+export const connectionsApi = {
+  create: (appId: string, type: ConnectionType, credentials?: object, metadata?: object) =>
+    request<Connection>(`/applications/${appId}/connections`, {
+      method: 'POST',
+      body: JSON.stringify({ type, ...(credentials && { credentials }), ...(metadata && { metadata }) }),
+    }),
+
+  list: (appId: string) =>
+    request<{ data: Connection[] }>(`/applications/${appId}/connections`),
+
+  get: (appId: string, connId: string) =>
+    request<Connection>(`/applications/${appId}/connections/${connId}`),
+
+  update: (appId: string, connId: string, updates: object) =>
+    request<Connection>(`/applications/${appId}/connections/${connId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    }),
+
+  delete: (appId: string, connId: string) =>
+    request<void>(`/applications/${appId}/connections/${connId}`, {
+      method: 'DELETE',
+    }),
+};

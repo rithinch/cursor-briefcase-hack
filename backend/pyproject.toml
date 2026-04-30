@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pulp"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    # api
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27",
+    "scalar-fastapi>=1.0",
+
+    # database
+    "asyncpg>=0.30",
+    "psycopg[binary]>=3.1",
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic>=1.13",
+
+    # langgraph + langchain
+    "langgraph>=0.2",
+    "langchain-core>=0.3",
+    "langchain-anthropic>=0.3",
+    "langgraph-checkpoint-postgres>=2.0",
+
+    # llm
+    "anthropic>=0.40",
+
+    # tracing — langsmith
+    "langsmith>=0.2",
+
+    # logging
+    "structlog>=24.4",
+
+    # security
+    "pyjwt>=2.9",
+    "passlib>=1.7",
+
+    # config
+    "pydantic-settings>=2.5",
+    "pydantic[email]>=2.0",
+    "python-dotenv>=1.0",
+
+    # blob storage
+    "azure-storage-blob>=12.19",
+
+    # sms / whatsapp
+    "twilio>=9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "ruff>=0.7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["api", "agents", "core", "db", "graph", "rails"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

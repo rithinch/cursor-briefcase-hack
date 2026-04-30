@@ -1,0 +1,35 @@
+# secrets — never commit
+*.key
+*.pem
+*.csr
+*.p12
+.env
+.env.local
+.env.*.local
+
+# python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+dist/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# node
+node_modules/
+**/node_modules/
+.npm/
+
+# docker
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# langgraph / langsmith
+.langsmith/
