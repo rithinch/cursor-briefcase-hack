@@ -1,4 +1,9 @@
-# Pulp — Autonomous Accounts Payable (Hack)
+<div align="center">
+  <img src="./images/banner.png" alt="Pulp" width="400" />
+</div>
+
+
+# Pulp — Autonomous Accounts Payable
 
 Pulp is a **full-stack autonomous accounts payable** prototype:
 
