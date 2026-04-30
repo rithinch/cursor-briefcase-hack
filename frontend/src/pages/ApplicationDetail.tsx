@@ -1811,17 +1811,25 @@ function ConfidenceSlider({
 const POLL_INTERVAL_MS = 15_000;
 
 function IntentsTab({ appId }: { appId: string }) {
+  const { applications } = useStore();
   const [intents, setIntents] = useState<Intent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [selectedIntent, setSelectedIntent] = useState<Intent | null>(null);
 
+  const apiKey = (applications.find(a => a.id === appId) as any)?.api_key_visible as string | undefined;
+
   const fetchIntents = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
-      const res = await intentsApi.list(appId);
+      if (!apiKey) {
+        setIntents([]);
+        setLastUpdated(new Date());
+        return;
+      }
+      const res = await intentsApi.list(appId, apiKey);
       setIntents(res.data as Intent[]);
       setLastUpdated(new Date());
     } catch (err) {
@@ -1830,7 +1838,7 @@ function IntentsTab({ appId }: { appId: string }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [appId]);
+  }, [appId, apiKey]);
 
   // Initial load + polling
   useEffect(() => {

@@ -72,8 +72,41 @@ export const applicationsApi = {
 
 // Intents
 export const intentsApi = {
-  list: (appId: string, limit = 100) =>
-    request<{ data: any[] }>(`/applications/${appId}/intents?limit=${limit}`),
+  list: (appId: string, apiKey: string, limit = 100) =>
+    request<{ data: any[] }>(`/applications/${appId}/intents?limit=${limit}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }),
+
+  create: (apiKey: string, payload: {
+    vendor: { name: string; email: string };
+    amount: { expected: number; currency: string; tolerance_pct: number };
+    context: { description: string; category: string };
+  }) =>
+    request<any>(`/intents`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify(payload),
+    }),
+};
+
+// Invoices
+export const invoicesApi = {
+  uploadPdf: async (apiKey: string, intentId: string, file: File) => {
+    const res = await fetch(`${BASE}/invoices?intent_id=${encodeURIComponent(intentId)}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/pdf',
+      },
+      body: file,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const msg = body?.error?.message || body?.detail?.error?.message || `HTTP ${res.status}`;
+      throw new ApiError(msg, res.status);
+    }
+    return res.json();
+  },
 };
 
 // Connections

@@ -6,9 +6,15 @@ export interface Intent {
   id: string;
   status: string;
   vendor: { name: string; email: string };
-  amount: { expected: number; currency: string };
-  context?: { description: string; category: string };
-  invoice?: { id: string; status: string; amount?: number; blob_url?: string | null };
+  amount: { expected: number; currency: string; tolerance_pct?: number };
+  context?: { description?: string; category?: string; job_id?: string | null; reference?: string | null };
+  invoice?: {
+    id: string;
+    status: string;
+    amount?: number;
+    blob_url?: string | null;
+    company_verification?: unknown;
+  };
   payment?: { id: string; status: string; rail: string | null; rail_reasoning?: string };
   timeline?: Array<{ status: string; at: string }>;
   created_at: string;
@@ -80,6 +86,7 @@ export function getStatusVariant(status: string): 'success' | 'warn' | 'danger' 
     case 'awaiting_invoice':
     case 'pending_invoice':
     case 'invoice_matched':
+    case 'company_verification_pending':
       return 'warn';
     case 'failed':
     case 'rejected':
@@ -119,6 +126,8 @@ export function resolveStepIndex(status: string): number {
     case 'awaiting_invoice':
     case 'pending_invoice':
       return 1; // invoice_matched is current; intent_created is done
+    case 'company_verification_pending':
+      return 1; // show within the Invoice stage (human review required)
     case 'processing':
       return 5; // payment_executed is current
     default:

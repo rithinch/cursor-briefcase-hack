@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import type React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../store/useStore';
-import { intentsApi } from '../api/client';
+import { intentsApi, invoicesApi } from '../api/client';
 import Card from '../components/Card';
 import Badge, { RailBadge } from '../components/Badge';
 import Icons from '../components/Icons';
 import Button from '../components/Button';
+import Modal from '../components/Modal';
 import { type Intent, STATUS_STEPS, getStatusVariant, formatStatus, formatDate } from '../components/intentUtils';
 import { IntentDetailModal } from '../components/IntentDetail';
 
@@ -20,13 +21,21 @@ export default function Intents() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [selectedIntent, setSelectedIntent] = useState<Intent | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed' | 'failed'>('all');
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
 
   const fetchIntents = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
       const results = await Promise.allSettled(
-        applications.map(app => intentsApi.list(app.id))
+        applications
+          .filter(app => (app as any).api_key_visible)
+          .map(app => intentsApi.list(app.id, (app as any).api_key_visible))
       );
       const all: Intent[] = [];
       for (const r of results) {
@@ -51,11 +60,93 @@ export default function Intents() {
 
   const filteredIntents = intents.filter(intent => {
     if (filter === 'all') return true;
-    if (filter === 'pending') return ['awaiting_invoice', 'pending_approval', 'processing'].includes(intent.status);
+    if (filter === 'pending') return ['awaiting_invoice', 'pending_approval', 'processing', 'company_verification_pending'].includes(intent.status);
     if (filter === 'completed') return ['reconciled', 'completed'].includes(intent.status);
     if (filter === 'failed') return ['failed', 'rejected'].includes(intent.status);
     return true;
   });
+
+  const selectableAgents = applications.map((a) => ({
+    id: a.id,
+    name: (a as any).name ?? a.id,
+    apiKey: (a as any).api_key_visible as string | undefined,
+  }));
+
+  const defaultAgent = selectableAgents.find(a => a.apiKey) ?? selectableAgents[0];
+  const effectiveAgentId = selectedAgentId || defaultAgent?.id || '';
+  const effectiveAgent = selectableAgents.find(a => a.id === effectiveAgentId);
+  const effectiveApiKey = effectiveAgent?.apiKey;
+
+  const resetUpload = () => {
+    setSelectedFile(null);
+    setUploadError(null);
+    setDragOver(false);
+    setUploading(false);
+  };
+
+  const closeUpload = () => {
+    setUploadOpen(false);
+    resetUpload();
+  };
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const f = files[0];
+    if (f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
+      setUploadError('Please upload a PDF file.');
+      return;
+    }
+    setSelectedFile(f);
+    setUploadError(null);
+  };
+
+  const runUploadFlow = async () => {
+    if (!effectiveAgentId) {
+      setUploadError('Select an agent to run this upload against.');
+      return;
+    }
+    if (!effectiveApiKey) {
+      setUploadError('Missing API key for this agent. Open the agent and rotate/copy its API key in Application Details.');
+      return;
+    }
+    if (!selectedFile) {
+      setUploadError('Select a PDF first.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const intentPayload = {
+        vendor: {
+          name: 'Vediq Spices',
+          email: 'accounts@vediqspices.in',
+        },
+        amount: {
+          expected: 2300,
+          currency: 'USD',
+          tolerance_pct: 5,
+        },
+        context: {
+          description: 'Bulk export-grade spice mix (500 kg) with shipping and duties',
+          category: 'food_and_beverage',
+        },
+      };
+
+      const created = await intentsApi.create(effectiveApiKey, intentPayload);
+      const intentId = created?.id as string | undefined;
+      if (!intentId) throw new Error('Intent creation failed: missing intent id');
+
+      await invoicesApi.uploadPdf(effectiveApiKey, intentId, selectedFile);
+
+      closeUpload();
+      await fetchIntents(true);
+    } catch (e: any) {
+      setUploadError(e?.message || 'Upload failed.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <div style={{ padding: '32px 40px' }}>
@@ -87,6 +178,14 @@ export default function Intents() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Icons.invoice size={14} />}
+            onClick={() => setUploadOpen(true)}
+          >
+            Upload invoice PDF
+          </Button>
           {lastUpdated && (
             <span style={{
               fontFamily: "'JetBrains Mono', monospace",
@@ -147,6 +246,140 @@ export default function Intents() {
           </div>
         </div>
       </motion.div>
+
+      {/* Upload modal */}
+      <Modal open={uploadOpen} onClose={closeUpload} title="Upload invoice PDF" width={620}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ fontSize: '13px', color: 'var(--muted)', lineHeight: 1.5 }}>
+            Drop a PDF invoice and Pulp will create a new intent, attach the invoice, and start the pipeline.
+          </div>
+
+          {/* Agent selector */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            padding: '12px 12px',
+            borderRadius: '10px',
+            background: 'rgba(247,242,234,0.03)',
+            border: '1px solid var(--hair)',
+          }}>
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: '10px',
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              color: 'var(--muted)',
+            }}>
+              Agent
+            </div>
+            <select
+              value={effectiveAgentId}
+              onChange={(e) => setSelectedAgentId(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                background: 'rgba(11,11,15,0.35)',
+                border: '1px solid rgba(247,242,234,0.12)',
+                color: 'var(--pith)',
+                fontSize: '13px',
+                outline: 'none',
+              }}
+            >
+              {selectableAgents.map((a) => (
+                <option key={a.id} value={a.id} style={{ color: '#0b0b0f' }}>
+                  {a.name}{a.apiKey ? '' : ' (no key)'}
+                </option>
+              ))}
+            </select>
+
+            {!effectiveApiKey && (
+              <div style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.5 }}>
+                This agent doesn’t have an API key stored. Open its Application Details and rotate/copy the key.
+              </div>
+            )}
+          </div>
+
+          <label
+            onDragEnter={() => setDragOver(true)}
+            onDragLeave={() => setDragOver(false)}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              handleFiles(e.dataTransfer.files);
+            }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '26px 18px',
+              borderRadius: '10px',
+              border: dragOver ? '1px solid var(--rind)' : '1px dashed rgba(247,242,234,0.25)',
+              background: dragOver ? 'rgba(255,122,26,0.08)' : 'rgba(247,242,234,0.03)',
+              cursor: 'pointer',
+              transition: 'all 150ms ease',
+              userSelect: 'none',
+            }}
+          >
+            <input
+              type="file"
+              accept="application/pdf"
+              style={{ display: 'none' }}
+              onChange={(e) => handleFiles(e.target.files)}
+            />
+            <div style={{
+              width: 46, height: 46, borderRadius: '12px',
+              background: 'rgba(255, 122, 26, 0.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--rind)',
+              border: '1px solid rgba(255, 122, 26, 0.25)',
+            }}>
+              <Icons.invoice size={22} />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--pith)', marginBottom: 4 }}>
+                Drag & drop a PDF, or click to choose
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                {selectedFile ? selectedFile.name : 'PDF only'}
+              </div>
+            </div>
+          </label>
+
+          {uploadError && (
+            <div style={{
+              padding: '10px 12px',
+              borderRadius: '8px',
+              background: 'rgba(255,77,77,0.06)',
+              border: '1px solid rgba(255,77,77,0.22)',
+              color: 'var(--pith)',
+              fontSize: '13px',
+              lineHeight: 1.45,
+            }}>
+              {uploadError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <Button variant="secondary" onClick={closeUpload} disabled={uploading}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={runUploadFlow}
+              loading={uploading}
+              disabled={!selectedFile || !effectiveApiKey}
+              iconRight={<Icons.arrowRight size={14} />}
+            >
+              Create intent & upload
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Filters */}
       <motion.div

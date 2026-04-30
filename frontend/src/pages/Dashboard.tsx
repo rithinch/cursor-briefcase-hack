@@ -56,7 +56,10 @@ export default function Dashboard() {
       setIntentsLoading(true);
       try {
         const intentPromises = applications.map(app => 
-          intentsApi.list(app.id, 1000).catch(err => {
+          ((app as any).api_key_visible
+            ? intentsApi.list(app.id, (app as any).api_key_visible, 1000)
+            : Promise.resolve({ data: [] as any[] })
+          ).catch(err => {
             console.error(`Failed to fetch intents for app ${app.id}:`, err);
             return { data: [] };
           })
@@ -155,7 +158,10 @@ export default function Dashboard() {
       // Fetch intents for all apps
       if (response.data.length > 0) {
         const intentPromises = response.data.map(app => 
-          intentsApi.list(app.id, 1000).catch(err => {
+          ((app as any).api_key_visible
+            ? intentsApi.list(app.id, (app as any).api_key_visible, 1000)
+            : Promise.resolve({ data: [] as any[] })
+          ).catch(err => {
             console.error(`Failed to fetch intents for app ${app.id}:`, err);
             return { data: [] };
           })

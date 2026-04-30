@@ -23,6 +23,30 @@ export function IntentDetailContent({ intent, onClose }: { intent: Intent; onClo
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const openPreview = useCallback((url: string) => setPreviewUrl(url), []);
 
+  const LOGO_TOKEN = 'pk_YRmCN-quT2CuWlBRBozpqA';
+  const logoUrl = (domain: string) =>
+    `https://img.logo.dev/${domain}?token=${LOGO_TOKEN}&retina=true`;
+
+  const vendorDomain = (() => {
+    const email = intent.vendor?.email ?? '';
+    const at = email.lastIndexOf('@');
+    return at >= 0 ? email.slice(at + 1).toLowerCase() : '';
+  })();
+
+  const companyVerification = (intent.invoice as any)?.company_verification as any | undefined;
+  const cvStatus = typeof companyVerification?.status === 'string' ? companyVerification.status : undefined;
+  const cvReason = typeof companyVerification?.reason === 'string' ? companyVerification.reason : undefined;
+  const cvError = typeof companyVerification?.error === 'string' ? companyVerification.error : undefined;
+  const specterDomain = (() => {
+    const md = companyVerification?.matched_domain;
+    if (typeof md === 'string' && md.trim()) return md.trim().toLowerCase();
+    const top = companyVerification?.specter_top_matches?.[0]?.domain;
+    if (typeof top === 'string' && top.trim()) return top.trim().toLowerCase();
+    const expected = companyVerification?.expected_domain;
+    if (typeof expected === 'string' && expected.trim()) return expected.trim().toLowerCase();
+    return '';
+  })();
+
   const monoLabel: React.CSSProperties = {
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: '10px',
@@ -338,6 +362,189 @@ export function IntentDetailContent({ intent, onClose }: { intent: Intent; onClo
                     {intent.invoice.id}
                   </span>
                 </div>
+
+                {/* Company verification panel (invoice stage) */}
+                {(intent.status === 'company_verification_pending' || intent.invoice?.status === 'company_verification_pending' || companyVerification) && (
+                  <div style={{
+                    marginTop: '6px',
+                    padding: '12px 12px',
+                    background: 'rgba(255,122,26,0.06)',
+                    border: '1px solid rgba(255,122,26,0.22)',
+                    borderRadius: '8px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                      <div style={{
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: '10px',
+                        letterSpacing: '0.18em',
+                        textTransform: 'uppercase',
+                        color: 'var(--rind)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}>
+                        <span>Company verification</span>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '3px 8px',
+                          borderRadius: '999px',
+                          background: 'rgba(247,242,234,0.06)',
+                          border: '1px solid rgba(247,242,234,0.12)',
+                          color: 'var(--muted)',
+                          fontSize: '10px',
+                          letterSpacing: '0.12em',
+                        }}>
+                          <img
+                            src="https://api.tryspecter.com/mintlify-assets/_mintlify/favicons/specter-308cd0b7/Z9zdJvK7GWEiMQIp/_generated/favicon/apple-touch-icon.png"
+                            alt="Specter"
+                            width={14}
+                            height={14}
+                            style={{ borderRadius: 4 }}
+                          />
+                          Powered by Specter
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Badge variant={(cvStatus === 'verified' || cvStatus === 'match') ? 'success' : 'warn'}>
+                          {cvStatus ?? 'pending'}
+                        </Badge>
+                        {cvReason && (
+                          <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                            {cvReason.replace(/_/g, ' ')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '10px',
+                      marginTop: '10px',
+                    }}>
+                      <div style={{
+                        padding: '10px 10px',
+                        background: 'rgba(247,242,234,0.03)',
+                        borderRadius: '7px',
+                        border: '1px solid var(--hair)',
+                      }}>
+                        <div style={{
+                          fontFamily: "'JetBrains Mono', monospace",
+                          fontSize: '10px',
+                          letterSpacing: '0.18em',
+                          textTransform: 'uppercase',
+                          color: 'var(--muted)',
+                          marginBottom: '8px',
+                        }}>
+                          Invoice / intent vendor
+                        </div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--pith)', marginBottom: '3px' }}>
+                          {intent.vendor?.name ?? '—'}
+                        </div>
+                        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '11px', color: 'var(--muted)' }}>
+                          {intent.vendor?.email ?? '—'}
+                        </div>
+                        {vendorDomain && (
+                          <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <img
+                              src={logoUrl(vendorDomain)}
+                              alt={`${vendorDomain} logo`}
+                              width={24}
+                              height={24}
+                              style={{ borderRadius: 6, background: 'rgba(247,242,234,0.06)' }}
+                            />
+                            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                              Domain: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--pith)' }}>{vendorDomain}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{
+                        padding: '10px 10px',
+                        background: 'rgba(247,242,234,0.03)',
+                        borderRadius: '7px',
+                        border: '1px solid var(--hair)',
+                      }}>
+                        <div style={{
+                          fontFamily: "'JetBrains Mono', monospace",
+                          fontSize: '10px',
+                          letterSpacing: '0.18em',
+                          textTransform: 'uppercase',
+                          color: 'var(--muted)',
+                          marginBottom: '8px',
+                        }}>
+                          Specter result (stored)
+                        </div>
+
+                        {specterDomain && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                            <img
+                              src={logoUrl(specterDomain)}
+                              alt={`${specterDomain} logo`}
+                              width={24}
+                              height={24}
+                              style={{ borderRadius: 6, background: 'rgba(247,242,234,0.06)' }}
+                            />
+                            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                              Domain: <span style={{ fontFamily: "'JetBrains Mono', monospace", color: 'var(--pith)' }}>{specterDomain}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {cvError ? (
+                          <div style={{
+                            padding: '10px 10px',
+                            background: 'rgba(255,77,77,0.06)',
+                            border: '1px solid rgba(255,77,77,0.22)',
+                            borderRadius: '7px',
+                            color: 'var(--pith)',
+                            fontSize: '12px',
+                            lineHeight: 1.45,
+                          }}>
+                            <div style={{ fontWeight: 700, marginBottom: '4px' }}>Verification error</div>
+                            <div style={{ fontFamily: "'JetBrains Mono', monospace", wordBreak: 'break-word' }}>
+                              {cvError}
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '12px', color: 'var(--muted)', lineHeight: 1.5 }}>
+                            Review the stored payload below to compare the vendor identity and domains.
+                          </div>
+                        )}
+
+                        {companyVerification && (
+                          <div style={{ marginTop: '10px' }}>
+                            <pre style={{
+                              margin: 0,
+                              padding: '10px 10px',
+                              borderRadius: '7px',
+                              background: 'rgba(11,11,15,0.35)',
+                              border: '1px solid rgba(247,242,234,0.10)',
+                              color: 'var(--pith)',
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: '11px',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.5,
+                              maxHeight: 200,
+                              overflow: 'auto',
+                            }}>
+                              {JSON.stringify(companyVerification, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--muted)', lineHeight: 1.5 }}>
+                      This intent is paused for human review. Confirm the vendor name + domain match before proceeding.
+                    </div>
+                  </div>
+                )}
+
                 {intent.invoice.blob_url && (
                   <button
                     onClick={() => openPreview(intent.invoice!.blob_url!)}
