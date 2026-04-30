@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     LLM_MODEL: str = "claude-sonnet-4-6"
 
+    # specter
+    SPECTER_API_KEY: str = ""
+
     # rails — comma-separated list of enabled rail ids
     # e.g. "mock" | "wise" | "revolut,yapily" | "mock,wise"
     RAILS_ENABLED: str = "mock"

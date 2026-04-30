@@ -113,6 +113,7 @@ class Invoice(Base):
     source       = Column(JSON, default=dict)                   # type, from_address, subject
     parsed       = Column(JSON, nullable=True)                  # vendor_name, amount, line_items…
     validation   = Column(JSON, nullable=True)                  # result, confidence, reasoning_trace
+    company_verification = Column(JSON, nullable=True)          # specter lookup + domain match payload
     raw_text     = Column(Text, nullable=True)
     blob_url     = Column(String, nullable=True)                 # Azure Blob URL for the PDF
     created_at   = Column(DateTime(timezone=True), server_default=func.now())

@@ -109,6 +109,7 @@ def _summarise_invoice(inv) -> dict | None:
         "status": inv.status,
         "amount": inv.parsed.get("amount") if inv.parsed else None,
         "blob_url": inv.blob_url,
+        "company_verification": getattr(inv, "company_verification", None),
     }
 
 

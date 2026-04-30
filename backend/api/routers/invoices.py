@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, status, 
 from db.repos import (SessionLocal, create_invoice, update_invoice, get_intent,
                       update_intent_status, append_event)
 from agents.invoice_parser import parse_invoice
+from core.specter import search_companies, build_company_verification_payload
 from core.logging import log
 
 router = APIRouter(prefix="/v1/invoices", tags=["invoices"])
@@ -73,9 +74,64 @@ async def _run_pipeline(account_id: str, intent_id: str,
     # parse invoice with Claude
     parsed = await parse_invoice(pdf_bytes=pdf_bytes)
 
+    # company verification (Specter) — pauses pipeline if mismatch/unknown
+    company_verification = None
+    try:
+        query = None
+        if parsed.get("vendor_email"):
+            # search expects a company name or domain; prefer domain from email if present
+            query = parsed.get("vendor_email").split("@")[-1]
+        elif parsed.get("vendor_name"):
+            query = parsed.get("vendor_name")
+
+        specter_results = await search_companies(query or "")
+        company_verification = build_company_verification_payload(
+            intent_vendor_email=(intent_dict.get("vendor") or {}).get("email"),
+            parsed_vendor_name=parsed.get("vendor_name"),
+            parsed_vendor_email=parsed.get("vendor_email"),
+            specter_results=specter_results,
+        )
+    except Exception as exc:
+        company_verification = {
+            "status": "pending",
+            "reason": "specter_error",
+            "error": str(exc),
+        }
+
     async with SessionLocal() as db:
-        await update_invoice(db, invoice_id, parsed=parsed, status="verified")
+        await update_invoice(db, invoice_id, parsed=parsed, company_verification=company_verification)
+
+        if company_verification and company_verification.get("status") != "verified":
+            await update_invoice(db, invoice_id, status="company_verification_pending")
+            await update_intent_status(db, intent_id, "company_verification_pending")
+            await append_event(
+                db,
+                account_id=account_id,
+                type_="invoice.company_verification_pending",
+                intent_id=intent_id,
+                object_type="invoice",
+                object_id=invoice_id,
+                data=company_verification,
+            )
+            log.info(
+                "invoice.company_verification_pending",
+                invoice_id=invoice_id,
+                intent_id=intent_id,
+                reason=company_verification.get("reason"),
+            )
+            return
+
+        await update_invoice(db, invoice_id, status="verified")
         await update_intent_status(db, intent_id, "invoice_verified")
+        await append_event(
+            db,
+            account_id=account_id,
+            type_="invoice.company_verified",
+            intent_id=intent_id,
+            object_type="invoice",
+            object_id=invoice_id,
+            data=company_verification or {},
+        )
 
     thread = {"configurable": {"thread_id": intent_id}}
     initial_state = {
