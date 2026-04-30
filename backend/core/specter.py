@@ -3,9 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import asyncio
+import random
 import httpx
 
 from core.config import settings
+from core.logging import log
 
 
 SPECTER_BASE_URL = "https://app.tryspecter.com/api/v1"
@@ -43,20 +46,57 @@ def _extract_domain_from_email(email: str | None) -> str | None:
 async def search_companies(query: str) -> list[SpecterCompany]:
     api_key = (settings.SPECTER_API_KEY or "").strip()
     if not api_key:
-        raise RuntimeError("SPECTER_API_KEY is not configured")
+        # Treat missing key as "not configured" rather than an error.
+        # Downstream logic can decide whether to gate the pipeline on this.
+        return []
 
     q = (query or "").strip()
     if not q:
         return []
 
+    # Specter rate limits (429) are common. Retry with exponential backoff.
+    max_attempts = 5
+    base_delay_s = 0.6
+
+    last_exc: Exception | None = None
     async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
-            f"{SPECTER_BASE_URL}/companies/search",
-            params={"query": q},
-            headers={"X-API-Key": api_key},
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        for attempt in range(1, max_attempts + 1):
+            try:
+                resp = await client.get(
+                    f"{SPECTER_BASE_URL}/companies/search",
+                    params={"query": q},
+                    headers={"X-API-Key": api_key},
+                )
+
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    raise httpx.HTTPStatusError(
+                        f"Specter retryable status {resp.status_code}",
+                        request=resp.request,
+                        response=resp,
+                    )
+
+                resp.raise_for_status()
+                data = resp.json()
+                break
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError) as exc:
+                last_exc = exc
+                if attempt >= max_attempts:
+                    raise
+                # expo backoff + jitter
+                delay = base_delay_s * (2 ** (attempt - 1)) + random.random() * 0.25
+                log.warning(
+                    "specter.retry",
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    delay_s=round(delay, 2),
+                    error=str(exc),
+                )
+                await asyncio.sleep(delay)
+        else:
+            # should be unreachable, but keep mypy happy
+            if last_exc:
+                raise last_exc
+            return []
 
     if not isinstance(data, list):
         return []

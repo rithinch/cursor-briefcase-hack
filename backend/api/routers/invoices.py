@@ -4,6 +4,7 @@ from db.repos import (SessionLocal, create_invoice, update_invoice, get_intent,
 from agents.invoice_parser import parse_invoice
 from core.specter import search_companies, build_company_verification_payload
 from core.logging import log
+from core.config import settings
 
 router = APIRouter(prefix="/v1/invoices", tags=["invoices"])
 
@@ -77,20 +78,26 @@ async def _run_pipeline(account_id: str, intent_id: str,
     # company verification (Specter) — pauses pipeline if mismatch/unknown
     company_verification = None
     try:
-        query = None
-        if parsed.get("vendor_email"):
-            # search expects a company name or domain; prefer domain from email if present
-            query = parsed.get("vendor_email").split("@")[-1]
-        elif parsed.get("vendor_name"):
-            query = parsed.get("vendor_name")
+        if not (settings.SPECTER_API_KEY or "").strip():
+            company_verification = {
+                "status": "pending",
+                "reason": "specter_not_configured",
+            }
+        else:
+            query = None
+            if parsed.get("vendor_email"):
+                # search expects a company name or domain; prefer domain from email if present
+                query = parsed.get("vendor_email").split("@")[-1]
+            elif parsed.get("vendor_name"):
+                query = parsed.get("vendor_name")
 
-        specter_results = await search_companies(query or "")
-        company_verification = build_company_verification_payload(
-            intent_vendor_email=(intent_dict.get("vendor") or {}).get("email"),
-            parsed_vendor_name=parsed.get("vendor_name"),
-            parsed_vendor_email=parsed.get("vendor_email"),
-            specter_results=specter_results,
-        )
+            specter_results = await search_companies(query or "")
+            company_verification = build_company_verification_payload(
+                intent_vendor_email=(intent_dict.get("vendor") or {}).get("email"),
+                parsed_vendor_name=parsed.get("vendor_name"),
+                parsed_vendor_email=parsed.get("vendor_email"),
+                specter_results=specter_results,
+            )
     except Exception as exc:
         company_verification = {
             "status": "pending",
