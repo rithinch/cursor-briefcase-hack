@@ -15,7 +15,7 @@ export interface Intent {
     blob_url?: string | null;
     company_verification?: unknown;
   };
-  payment?: { id: string; status: string; rail: string | null; rail_reasoning?: string };
+  payment?: { id: string; status: string; rail: string | null; rail_reasoning?: string; approval_url?: string | null };
   timeline?: Array<{ status: string; at: string }>;
   created_at: string;
 }

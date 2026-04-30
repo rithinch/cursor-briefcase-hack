@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../store/useStore';
-import { intentsApi, invoicesApi } from '../api/client';
+import { intentsApi, invoicesApi, paymentsApi } from '../api/client';
 import Card from '../components/Card';
 import Badge, { RailBadge } from '../components/Badge';
 import Icons from '../components/Icons';
@@ -27,6 +27,8 @@ export default function Intents() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [approvingIntentId, setApprovingIntentId] = useState<string | null>(null);
+  const [approveError, setApproveError] = useState<string | null>(null);
 
   const fetchIntents = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -145,6 +147,21 @@ export default function Intents() {
       setUploadError(e?.message || 'Upload failed.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const approveIntent = async (intentId: string, approvalUrl?: string | null) => {
+    if (!effectiveApiKey) return;
+    if (!approvalUrl) return;
+    setApprovingIntentId(intentId);
+    setApproveError(null);
+    try {
+      await paymentsApi.approve(effectiveApiKey, approvalUrl);
+      await fetchIntents(true);
+    } catch (e: any) {
+      setApproveError(e?.message || 'Approval failed.');
+    } finally {
+      setApprovingIntentId(null);
     }
   };
 
@@ -620,6 +637,8 @@ export default function Intents() {
       {selectedIntent && (
         <IntentDetailModal
           intent={selectedIntent}
+          apiKey={effectiveApiKey}
+          onApproved={() => fetchIntents(true)}
           onClose={() => setSelectedIntent(null)}
         />
       )}

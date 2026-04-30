@@ -151,10 +151,10 @@ async def _run_pipeline(account_id: str, intent_id: str,
         "payment":        None, "reconciliation": None, "error": None,
     }
 
-    await _graph.ainvoke(initial_state, thread)
+    await _graph.ainvoke(initial_state, config=thread, version="v2")
 
     # persist final state back to DB
-    snapshot = await _graph.aget_state(thread)
+    snapshot = await _graph.aget_state(config=thread)
     state = snapshot.values
     await _persist_final_state(account_id, intent_id, invoice_id, state)
 

@@ -57,7 +57,16 @@ async def approve(
 async def _resume_pipeline(intent_id: str, thread: dict) -> None:
     try:
         log.info("pipeline.resuming", intent_id=intent_id)
-        await _graph.ainvoke(Command(resume="approved"), thread)
+        # LangGraph interrupts require Python 3.11+ in async contexts.
+        # Our graph ends after awaiting approval, so we resume by continuing
+        # from the persisted state snapshot.
+        snapshot = await _graph.aget_state(config=thread)
+        state = snapshot.values or {}
+        from graph.pipeline import rail_selector_node, execute_payment_node, reconcile_node
+
+        state = await rail_selector_node(state)
+        state = await execute_payment_node(state)
+        state = await reconcile_node(state)
         log.info("pipeline.resume_complete", intent_id=intent_id)
     except Exception as exc:
         log.error("pipeline.resume_error", intent_id=intent_id, error=str(exc), exc_info=True)

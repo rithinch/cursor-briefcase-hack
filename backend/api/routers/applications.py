@@ -130,14 +130,30 @@ async def list_app_intents(app_id: str, limit: int = 100, offset: int = 0):
 
 
 def _fmt_intent(intent) -> dict:
+    approval_url = None
+    if intent.payment and intent.payment.status == "pending_approval" and intent.payment.approval:
+        token = intent.payment.approval.get("token")
+        if token:
+            approval_url = f"/v1/payments/{intent.payment.id}/approve?token={token}"
+
     return {
         "id":         intent.id,
         "status":     intent.status,
         "vendor":     intent.vendor,
         "amount":     intent.amount,
         "context":    intent.context,
-        "invoice":    {"id": intent.invoice.id, "status": intent.invoice.status, "blob_url": intent.invoice.blob_url} if intent.invoice else None,
-        "payment":    {"id": intent.payment.id, "status": intent.payment.status, "rail": intent.payment.rail_id} if intent.payment else None,
+        "invoice":    {
+            "id": intent.invoice.id,
+            "status": intent.invoice.status,
+            "blob_url": intent.invoice.blob_url,
+            "company_verification": getattr(intent.invoice, "company_verification", None),
+        } if intent.invoice else None,
+        "payment":    {
+            "id": intent.payment.id,
+            "status": intent.payment.status,
+            "rail": intent.payment.rail_id,
+            "approval_url": approval_url,
+        } if intent.payment else None,
         "created_at": intent.created_at.isoformat(),
     }
 

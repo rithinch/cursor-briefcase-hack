@@ -140,3 +140,19 @@ export const connectionsApi = {
       method: 'DELETE',
     }),
 };
+
+// Payments
+export const paymentsApi = {
+  approve: async (apiKey: string, approvalUrl: string) => {
+    const res = await fetch(approvalUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const msg = body?.error?.message || body?.detail?.error?.message || `HTTP ${res.status}`;
+      throw new ApiError(msg, res.status);
+    }
+    return res.json();
+  },
+};

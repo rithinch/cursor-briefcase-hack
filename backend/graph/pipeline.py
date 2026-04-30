@@ -127,7 +127,10 @@ async def await_approval_node(state: IntentState) -> IntentState:
                 vendor=state["intent"].get("vendor", {}),
             )
 
-    interrupt("pending_human_approval")
+    # NOTE: LangGraph interrupts require Python >=3.11 for async contextvar propagation.
+    # This backend runs on Python 3.10, so we cannot safely call interrupt() here.
+    # Instead, we end the graph after minting the approval token. The approve endpoint
+    # resumes the pipeline by continuing from persisted state.
     return {**state, "payment": {"id": payment.id, "status": "pending_approval"}}
 
 
@@ -235,7 +238,7 @@ def build_graph(checkpointer: AsyncPostgresSaver):
         "await_approval": "await_approval",
         "select_rail":    "select_rail",
     })
-    builder.add_edge("await_approval",  "select_rail")
+    builder.add_edge("await_approval",  END)
     builder.add_edge("select_rail",     "execute_payment")
     builder.add_edge("execute_payment", "reconcile")
     builder.add_edge("reconcile",       END)

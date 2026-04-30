@@ -4,6 +4,7 @@ import Badge, { RailBadge } from './Badge';
 import Icons from './Icons';
 import Button from './Button';
 import Modal from './Modal';
+import { paymentsApi } from '../api/client';
 import {
   type Intent,
   STATUS_STEPS,
@@ -17,10 +18,22 @@ export type { Intent };
 
 // ── Detail content (shared between modal and drawer) ───────────────────────
 
-export function IntentDetailContent({ intent, onClose }: { intent: Intent; onClose: () => void }) {
+export function IntentDetailContent({
+  intent,
+  onClose,
+  apiKey,
+  onApproved,
+}: {
+  intent: Intent;
+  onClose: () => void;
+  apiKey?: string;
+  onApproved?: () => void;
+}) {
   const currentStepIndex = resolveStepIndex(intent.status);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
   const openPreview = useCallback((url: string) => setPreviewUrl(url), []);
 
   const LOGO_TOKEN = 'pk_YRmCN-quT2CuWlBRBozpqA';
@@ -37,6 +50,11 @@ export function IntentDetailContent({ intent, onClose }: { intent: Intent; onClo
   const cvStatus = typeof companyVerification?.status === 'string' ? companyVerification.status : undefined;
   const cvReason = typeof companyVerification?.reason === 'string' ? companyVerification.reason : undefined;
   const cvError = typeof companyVerification?.error === 'string' ? companyVerification.error : undefined;
+  const specterTopMatches = Array.isArray(companyVerification?.specter_top_matches)
+    ? companyVerification.specter_top_matches
+    : [];
+  const specterCompanyId = typeof specterTopMatches?.[0]?.id === 'string' ? specterTopMatches[0].id : undefined;
+  const specterCompanyUrl = specterCompanyId ? `https://app.tryspecter.com/companies/${specterCompanyId}` : undefined;
   const specterDomain = (() => {
     const md = companyVerification?.matched_domain;
     if (typeof md === 'string' && md.trim()) return md.trim().toLowerCase();
@@ -46,6 +64,34 @@ export function IntentDetailContent({ intent, onClose }: { intent: Intent; onClo
     if (typeof expected === 'string' && expected.trim()) return expected.trim().toLowerCase();
     return '';
   })();
+
+  const truncateMiddle = (s: string, max = 48) => {
+    const str = (s ?? '').toString();
+    if (str.length <= max) return str;
+    const head = Math.max(10, Math.floor((max - 3) / 2));
+    const tail = Math.max(8, max - 3 - head);
+    return `${str.slice(0, head)}...${str.slice(-tail)}`;
+  };
+
+  const approvalUrl = typeof (intent.payment as any)?.approval_url === 'string'
+    ? (intent.payment as any).approval_url
+    : undefined;
+
+  const canApprove = Boolean(apiKey && approvalUrl && (intent.status === 'pending_approval' || (intent.payment as any)?.status === 'pending_approval'));
+
+  const handleApprove = useCallback(async () => {
+    if (!apiKey || !approvalUrl) return;
+    setApproving(true);
+    setApproveError(null);
+    try {
+      await paymentsApi.approve(apiKey, approvalUrl);
+      onApproved?.();
+    } catch (e: any) {
+      setApproveError(e?.message || 'Approval failed.');
+    } finally {
+      setApproving(false);
+    }
+  }, [apiKey, approvalUrl, onApproved]);
 
   const monoLabel: React.CSSProperties = {
     fontFamily: "'JetBrains Mono', monospace",
@@ -479,6 +525,64 @@ export function IntentDetailContent({ intent, onClose }: { intent: Intent; onClo
                           Specter result (stored)
                         </div>
 
+                        {specterCompanyId && (
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '10px',
+                            marginBottom: '10px',
+                            padding: '10px 10px',
+                            background: 'rgba(247,242,234,0.03)',
+                            borderRadius: '7px',
+                            border: '1px solid var(--hair)',
+                          }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <div style={{
+                                fontFamily: "'JetBrains Mono', monospace",
+                                fontSize: '10px',
+                                letterSpacing: '0.18em',
+                                textTransform: 'uppercase',
+                                color: 'var(--muted)',
+                              }}>
+                                Specter company id
+                              </div>
+                              <div style={{
+                                fontFamily: "'JetBrains Mono', monospace",
+                                fontSize: '12px',
+                                color: 'var(--pith)',
+                                wordBreak: 'break-word',
+                              }}>
+                                {truncateMiddle(specterCompanyId, 34)}
+                              </div>
+                            </div>
+                            {specterCompanyUrl && (
+                              <a
+                                href={specterCompanyUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '8px 10px',
+                                  borderRadius: '6px',
+                                  background: 'rgba(255,122,26,0.08)',
+                                  border: '1px solid rgba(255,122,26,0.25)',
+                                  color: 'var(--rind)',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                  textDecoration: 'none',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                Open in Specter
+                                <Icons.arrowRight size={12} />
+                              </a>
+                            )}
+                          </div>
+                        )}
+
                         {specterDomain && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
                             <img
@@ -517,31 +621,43 @@ export function IntentDetailContent({ intent, onClose }: { intent: Intent; onClo
 
                         {companyVerification && (
                           <div style={{ marginTop: '10px' }}>
-                            <pre style={{
-                              margin: 0,
-                              padding: '10px 10px',
-                              borderRadius: '7px',
-                              background: 'rgba(11,11,15,0.35)',
-                              border: '1px solid rgba(247,242,234,0.10)',
-                              color: 'var(--pith)',
-                              fontFamily: "'JetBrains Mono', monospace",
-                              fontSize: '11px',
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
-                              lineHeight: 1.5,
-                              maxHeight: 200,
-                              overflow: 'auto',
-                            }}>
-                              {JSON.stringify(companyVerification, null, 2)}
-                            </pre>
+                            <details>
+                              <summary style={{
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                color: 'var(--muted)',
+                                userSelect: 'none',
+                              }}>
+                                View raw Specter payload
+                              </summary>
+                              <pre style={{
+                                margin: '10px 0 0',
+                                padding: '10px 10px',
+                                borderRadius: '7px',
+                                background: 'rgba(11,11,15,0.35)',
+                                border: '1px solid rgba(247,242,234,0.10)',
+                                color: 'var(--pith)',
+                                fontFamily: "'JetBrains Mono', monospace",
+                                fontSize: '11px',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                lineHeight: 1.5,
+                                maxHeight: 180,
+                                overflow: 'auto',
+                              }}>
+                                {JSON.stringify(companyVerification, null, 2)}
+                              </pre>
+                            </details>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--muted)', lineHeight: 1.5 }}>
-                      This intent is paused for human review. Confirm the vendor name + domain match before proceeding.
-                    </div>
+                    {(cvStatus && cvStatus !== 'verified') && (
+                      <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--muted)', lineHeight: 1.5 }}>
+                        This intent is paused for human review. Confirm the vendor name + domain match before proceeding.
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -577,6 +693,89 @@ export function IntentDetailContent({ intent, onClose }: { intent: Intent; onClo
                     {intent.payment!.rail_reasoning}
                   </span>
                 )}
+              </div>
+            ),
+          },
+          (intent.status === 'pending_approval' || (intent.payment as any)?.status === 'pending_approval') && approvalUrl && {
+            label: 'Approval',
+            content: (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--muted)', lineHeight: 1.5 }}>
+                  This payment requires human approval.
+                </div>
+
+                {approveError && (
+                  <div style={{
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    background: 'rgba(255,77,77,0.06)',
+                    border: '1px solid rgba(255,77,77,0.22)',
+                    color: 'var(--pith)',
+                    fontSize: '12px',
+                    lineHeight: 1.45,
+                  }}>
+                    {approveError}
+                  </div>
+                )}
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: '10px',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(79,199,127,0.22)',
+                  background: 'rgba(79,199,127,0.06)',
+                }}>
+                  {canApprove ? (
+                    <button
+                      onClick={handleApprove}
+                      disabled={approving}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        background: approving ? 'rgba(79,199,127,0.06)' : 'rgba(79,199,127,0.12)',
+                        border: '1px solid rgba(79,199,127,0.30)',
+                        color: 'var(--success)',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        cursor: approving ? 'not-allowed' : 'pointer',
+                        whiteSpace: 'nowrap',
+                        opacity: approving ? 0.75 : 1,
+                      }}
+                    >
+                      {approving ? 'Approving…' : 'Approve'}
+                      <Icons.checkSmall size={12} />
+                    </button>
+                  ) : (
+                    <a
+                      href={approvalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        background: 'rgba(79,199,127,0.10)',
+                        border: '1px solid rgba(79,199,127,0.30)',
+                        color: 'var(--success)',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        textDecoration: 'none',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Open approval
+                      <Icons.arrowRight size={12} />
+                    </a>
+                  )}
+                </div>
               </div>
             ),
           },
@@ -676,10 +875,20 @@ export function IntentDetailContent({ intent, onClose }: { intent: Intent; onClo
 
 // ── Centered modal (used on the Intents page) ──────────────────────────────
 
-export function IntentDetailModal({ intent, onClose }: { intent: Intent; onClose: () => void }) {
+export function IntentDetailModal({
+  intent,
+  onClose,
+  apiKey,
+  onApproved,
+}: {
+  intent: Intent;
+  onClose: () => void;
+  apiKey?: string;
+  onApproved?: () => void;
+}) {
   return (
     <Modal open onClose={onClose} title="Intent Details" width={680}>
-      <IntentDetailContent intent={intent} onClose={onClose} />
+      <IntentDetailContent intent={intent} onClose={onClose} apiKey={apiKey} onApproved={onApproved} />
     </Modal>
   );
 }
