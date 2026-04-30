@@ -9,9 +9,15 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const optHeaders = options?.headers;
+  const mergedHeaders =
+    optHeaders instanceof Headers
+      ? { 'Content-Type': 'application/json', ...Object.fromEntries(optHeaders.entries()) }
+      : { 'Content-Type': 'application/json', ...(optHeaders as Record<string, string> | undefined) };
+
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
+    headers: mergedHeaders,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
